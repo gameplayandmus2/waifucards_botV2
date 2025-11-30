@@ -181,7 +181,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ——— поиск совпадений ———
     matches = find_top_matches(cropped_img, top_k=3)
-    threshold = 0.60
+    threshold = 0.75
     found = False
 
     for idx, (card, score) in enumerate(matches):

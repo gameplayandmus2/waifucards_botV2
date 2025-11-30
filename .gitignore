@@ -1,0 +1,6 @@
+.venv/
+data/cards/
+.env
+custom_yolo/dataset/
+__pycache__/
+runs/

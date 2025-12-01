@@ -1,63 +1,90 @@
-# yolo_detector.py
+from ultralytics import YOLO
 import numpy as np
 import cv2
 from PIL import Image
-from pathlib import Path
-from ultralytics import YOLO
 
-YOLO_MODEL_PATH = Path("custom_yolo/best.pt")
+yolo_model = YOLO("custom_yolo/best.pt")
 
-# Загружаем YOLOv8 модель
-yolo_model = YOLO(str(YOLO_MODEL_PATH))
+def detect_all_cards_yolo(pil_img: Image.Image):
+    img = np.array(pil_img.convert("RGB"))[..., ::-1]  # BGR
+
+    results = yolo_model(img, verbose=False)
+    boxes = []
+
+    for box in results[0].boxes:
+        x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+        boxes.append((x1, y1, x2, y2))
+
+    return img, boxes
 
 
-def detect_card_yolo(pil_img: Image.Image) -> Image.Image | None:
-    # Convert PIL → NumPy BGR
-    image = np.array(pil_img.convert("RGB"))[..., ::-1]
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+import cv2
 
-    # Run YOLOv8 inference
-    results = yolo_model(image, verbose=False)
+def draw_boxes_with_numbers(np_img, boxes):
+    img_np = np_img.copy()
 
-    # Если нет боксов — ничего не нашли
-    if len(results[0].boxes) == 0:
-        return None
+    # Яркие читаемые цвета (BGR для OpenCV)
+    COLORS = [
+        (0, 255, 0),     # зелёный
+        (0, 128, 255),   # оранжево-голубой
+        (255, 0, 0),     # синий
+        (255, 0, 255),   # фиолетовый p.s. от twinZ'a нихуя не совпадвает, но хоть номер и рамка одного цвета
+        (0, 255, 255),   # жёлтый
+        (255, 255, 0),   # голубой
+        (128, 0, 255),   # фиолетово-синий
+        (0, 0, 255),     # красный
+    ]
 
-    # Берём первый бокс (как ты делал раньше)
-    box = results[0].boxes[0]
+    for i, (x1, y1, x2, y2) in enumerate(boxes, start=1):
+        color = COLORS[(i - 1) % len(COLORS)]
 
-    # Получаем координаты
-    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-    cropped = image[y1:y2, x1:x2]
+        # Рисуем рамку OpenCV (BGR)
+        cv2.rectangle(img_np, (x1, y1), (x2, y2), color[::-1], 3)
 
-    # ==== Поворот по линиям (как в старом коде) ====
-    gray = cv2.cvtColor(cropped, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 200)
-    lines = cv2.HoughLines(edges, 1, np.pi / 180, threshold=100)
+    # Конвертируем в PIL для текста (RGB)
+    img_pil = Image.fromarray(img_np[..., ::-1])
+    draw = ImageDraw.Draw(img_pil)
+    font = ImageFont.truetype("arial.ttf", max(24, (x2-x1)//5))  # размер адаптивный
 
-    if lines is not None:
-        angles = []
+    for i, (x1, y1, x2, y2) in enumerate(boxes, start=1):
+        color = COLORS[(i - 1) % len(COLORS)]
+        text = str(i)
 
-        for rho, theta in lines[:, 0]:
-            angle_deg = np.rad2deg(theta)
+        # Размер текста
+        text_w, text_h = draw.textbbox((0,0), text, font=font)[2:]
+        # Центр бокса
+        box_cx = (x1 + x2) / 2
+        box_cy = (y1 + y2) / 2
 
-            # Вертикальные/горизонтальные линии
-            if angle_deg < 10 or (80 < angle_deg < 100) or angle_deg > 170:
-                if angle_deg > 90:
-                    angle_deg -= 180
-                angles.append(angle_deg)
+        # Положение текста с белым скруглённым прямоугольником
+        padding = 6
+        rect_x1 = box_cx - text_w/2 - padding
+        rect_y1 = box_cy - text_h/2 - padding
+        rect_x2 = box_cx + text_w/2 + padding
+        rect_y2 = box_cy + text_h/2 + padding
 
-        if angles:
-            median_angle = np.median(angles)
+        # Скругленный прямоугольник
+        draw.rounded_rectangle(
+            [rect_x1, rect_y1, rect_x2, rect_y2],
+            radius=8,
+            fill=(255,255,255)
+        )
 
-            if abs(median_angle) > 2:  # наклон >2°
-                h, w = cropped.shape[:2]
-                M = cv2.getRotationMatrix2D((w / 2, h / 2), median_angle, 1.0)
-                rotated = cv2.warpAffine(
-                    cropped, M, (w, h),
-                    flags=cv2.INTER_CUBIC,
-                    borderMode=cv2.BORDER_REPLICATE
-                )
-                return Image.fromarray(cv2.cvtColor(rotated, cv2.COLOR_BGR2RGB))
+        # Текст по центру
+        draw.text(
+            (box_cx - text_w/2, box_cy - text_h/2),
+            text,
+            font=font,
+            fill=color
+        )
 
-    # Если поворота нет или он маленький
-    return Image.fromarray(cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB))
+    return img_pil
+
+
+
+
+
+
+

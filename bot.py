@@ -8,7 +8,7 @@ import requests
 from PIL import Image, ImageOps
 from io import BytesIO
 
-from telegram import Update, InputFile
+from telegram import Update, InputFile, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 import open_clip
@@ -85,7 +85,7 @@ def find_top_matches(image: Image.Image, top_k=3):
 
     return results
 
-async def safe_send_image(message_obj, img_path, caption=None):
+async def safe_send_image(message_obj, img_path, caption=None, reply_markup=None):
     if not os.path.exists(img_path):
         await message_obj.reply_text(f"❌ Файл не найден: `{img_path}`")
         return
@@ -98,7 +98,7 @@ async def safe_send_image(message_obj, img_path, caption=None):
 
     try:
         with open(img_path, "rb") as f:
-            await message_obj.reply_photo(photo=f, caption=caption, parse_mode="Markdown")
+            await message_obj.reply_photo(photo=f, caption=caption, parse_mode="Markdown", reply_markup=reply_markup)
     except Exception as e:
         await message_obj.reply_text(f"⚠️ Не удалось отправить изображение: {e}")
 
@@ -213,22 +213,22 @@ async def _process_card_by_index(update: Update, context: ContextTypes.DEFAULT_T
         card_set = card.get('set', 'Unknown')
 
         # Строим caption в Markdown формате
-        caption = f"Совпадение: {match_percent}%\n\n"
+        caption = f"Совпадение: `{match_percent}%`\n\n"
 
-        # [RARITY-NUMBER] с ссылкой на карту
-        caption += f"[{rarity_normalized}-{card['number']}](https://waifucards.app/cards?number={card['id']})\n"
+        # [RARITY-NUMBER] без ссылки, в backticks
+        caption += f"*{rarity_normalized}-{card['number']}*\n"
 
         # [CHARACTER] ([TITLE]) с отдельными ссылками
         caption += f"[{character}](https://waifucards.app/cards?character={character}) "
         caption += f"([{title}](https://waifucards.app/cards?title={title}))\n"
 
-        # [SERIES SET] с ссылкой на сет
-        caption += f"[{series} {card_set}](https://waifucards.app/set/{card_set})\n"
+        # [SERIES SET] оба жирные, ссылка только на сет
+        caption += f"*{series}* [{card_set}](https://waifucards.app/set/{card_set})\n"
 
         caption += "\n"
 
         # Цена
-        if price_data:
+        if price_data and price_data.get("price") is not None:
             price = price_data.get("price")
             count = price_data.get("count")
             price_type = price_data.get("type", "median")
@@ -238,16 +238,21 @@ async def _process_card_by_index(update: Update, context: ContextTypes.DEFAULT_T
             else:
                 caption += f"Средняя цена {price}₽\n"
                 if count:
-                    caption += f"[На основании {count} лотов](https://waifucards.app/cards?number={card['id']}&list=sell)\n"
+                    caption += f"На основании {count} лотов\n"
+        else:
+            caption += "Данных о стоимости карты нет.\n"
 
         caption += "\n"
 
         # Лимитная редкость если есть
         if card.get("limit_range"):
-            caption += f"Лимит: `*/{card['limit_range']}`\n\n"
+            caption += f"Лимит: `*/{card['limit_range']}`\n"
 
-        # Кнопка внизу
-        caption += f"[🔗 Открыть на сайте](https://waifucards.app/cards?number={card['id']})"
+        # Создаём кнопку "Открыть на сайте"
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Открыть на сайте", url=f"https://waifucards.app/cards?number={card['id']}"),
+            InlineKeyboardButton("🛒 Найти в продаже", url=f"https://waifucards.app/cards?number={card['id']}&list=sell")]
+        ])
 
         # путь с нормализованной редкостью: cards_png/set/RARITY-number.png
         img_path = os.path.join(
@@ -264,7 +269,7 @@ async def _process_card_by_index(update: Update, context: ContextTypes.DEFAULT_T
                 f"{rarity_normalized}-{card['number']}.webp"
             )
 
-        await safe_send_image(update.message, img_path, caption=caption)
+        await safe_send_image(update.message, img_path, caption=caption, reply_markup=keyboard)
 
     if not found:
         await update.message.reply_text(

@@ -11,7 +11,7 @@ from telegram import Update, InputFile
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
 import open_clip
-from yolo_detector import detect_all_cards_yolo, draw_boxes_with_numbers
+from yolo_detector import detect_all_cards_yolo, draw_boxes_with_numbers, should_show_quality_warning
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -107,7 +107,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # YOLO detect all cards
-    np_img, boxes = detect_all_cards_yolo(pil_img)
+    np_img, boxes, filter_info = detect_all_cards_yolo(pil_img)
 
     if not boxes:
         await update.message.reply_text("❌ YOLO не нашёл карточек.")
@@ -117,6 +117,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["np_img"] = np_img
     context.user_data["boxes"] = boxes
 
+    # Если осталось только одна карта - сразу её обрабатываем молча
+    if len(boxes) == 1:
+        await _process_card_by_index(update, context, 0)
+        return
+
+    # Если карт больше одной - показываем превью для выбора
     # draw numbered boxes
     preview = draw_boxes_with_numbers(np_img, boxes)
 
@@ -124,34 +130,29 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     preview.save(out, format="JPEG")
     out.seek(0)
 
+    caption = "Найденные карты пронумерованы сверху. Отправь номер карты для распознавания."
+
+    # Проверяем качество распознавания
+    if should_show_quality_warning(filter_info):
+        caption += "\n\n⚠️ Карточки на вашем изображении трудно распознать. Попробуйте обрезать фото оставив только нужную карточку."
+
     await update.message.reply_photo(
         photo=InputFile(out, filename="preview.jpg"),
-        caption="Найденные карты пронумерованы сверху. Отправь номер карты для распознавания."
+        caption=caption
     )
 
-# ------------------------ TEXT HANDLER ------------------------
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-
-    if "np_img" not in context.user_data or "boxes" not in context.user_data:
-        await update.message.reply_text("Сначала отправь фото с карточками.")
-        return
-
-    try:
-        idx = int(text) - 1
-    except ValueError:
-        await update.message.reply_text("❌ Введи номер карты цифрой.")
-        return
-
+# Вспомогательная функция для обработки карты по индексу
+async def _process_card_by_index(update: Update, context: ContextTypes.DEFAULT_TYPE, card_idx: int):
+    """Обрабатывает карту по индексу: кроп, поиск, вывод результатов"""
     np_img = context.user_data["np_img"]
     boxes = context.user_data["boxes"]
 
-    if idx < 0 or idx >= len(boxes):
+    if card_idx < 0 or card_idx >= len(boxes):
         await update.message.reply_text("❌ Неверный номер карты.")
         return
 
     # crop selected card
-    x1, y1, x2, y2 = map(int, boxes[idx])
+    x1, y1, x2, y2 = map(int, boxes[card_idx])
     h, w = np_img.shape[:2]
     x1, y1 = max(0, x1), max(0, y1)
     x2, y2 = min(w, x2), min(h, y2)
@@ -208,6 +209,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ Не удалось точно распознать карту. Попробуй другое фото."
         )
+
+
+# ------------------------ TEXT HANDLER ------------------------
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+
+    if "np_img" not in context.user_data or "boxes" not in context.user_data:
+        await update.message.reply_text("Сначала отправь фото с карточками.")
+        return
+
+    try:
+        idx = int(text) - 1
+    except ValueError:
+        await update.message.reply_text("❌ Введи номер карты цифрой.")
+        return
+
+    await _process_card_by_index(update, context, idx)
 
 
 # ------------------------ RUN ------------------------

@@ -4,6 +4,7 @@ import json
 import torch
 import faiss
 import numpy as np
+import requests
 from PIL import Image, ImageOps
 from io import BytesIO
 
@@ -23,8 +24,9 @@ FAISS_INDEX_FILE = os.path.join(DATA_DIR, "faiss.index")
 ID_MAP_FILE = os.path.join(DATA_DIR, "id_map.json")
 CARDS_IMG_DIR = os.path.join(DATA_DIR, "cards")
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"⚡ Using device: {device}")
+use_gpu = os.getenv("USE_GPU", "false").lower() == "true"
+device = "cuda" if (use_gpu and torch.cuda.is_available()) else "cpu"
+print(f"⚡ Using device: {device}" + (" (GPU enabled in .env)" if use_gpu else " (CPU mode)"))
 
 # ------------------------  LOAD CARDS  ------------------------
 with open(CARDS_JSON, "r", encoding="utf-8") as f:
@@ -45,6 +47,21 @@ model.to(device)
 model.eval()
 
 # ------------------------ UTILS ------------------------
+def normalize_rarity(rarity):
+    """Удаляет слеш из редкости. Например MR/199 -> MR199"""
+    return rarity.replace("/", "")
+
+
+def get_card_price(card_id):
+    """Получает информацию о цене карточки с API"""
+    try:
+        response = requests.get(f"https://waifucards.app/price?id={card_id}", timeout=10)
+        response.raise_for_status()
+        return response.json()
+    except Exception as e:
+        return None
+
+
 def find_top_matches(image: Image.Image, top_k=3):
     img = preprocess(image).unsqueeze(0).to(device)
     with torch.no_grad():
@@ -182,26 +199,70 @@ async def _process_card_by_index(update: Update, context: ContextTypes.DEFAULT_T
 
         found = True
 
-        price_info = (
-            f"💰 Цена: `{card.get('price', {}).get('price', '–')}₽`\n"
-            if "price" in card else ""
-        )
+        # Информация о цене карточки
+        price_data = get_card_price(card['id'])
 
-        caption = (
-            f"{idx + 1}⃣ *{card['title']}*\n"
-            f"👾 Тайтл: `{card['series']}`\n"
-            f"📦 Set: [{card['set']}](https://waifucards.app/set/{card['set']})\n"
-            f"🌟 Rarity: `{card['rarity']}`\n"
-            f"{price_info}"
-            f"🔗 [Открыть на сайте](https://waifucards.app/cards?number={card['id']})\n"
-            f"📈 Совпадение: `{round(score*100,2)}%`"
-        )
+        # Нормализуем редкость для отображения
+        rarity_normalized = normalize_rarity(card['rarity'])
+        match_percent = round(score * 100, 2)
 
-        # путь: set_rarity_number.png
+        # Извлекаем данные из JSON
+        character = card.get('character', 'Unknown')
+        title = card.get('title', 'Unknown')
+        series = card.get('series', 'Unknown')
+        card_set = card.get('set', 'Unknown')
+
+        # Строим caption в Markdown формате
+        caption = f"Совпадение: {match_percent}%\n\n"
+
+        # [RARITY-NUMBER] с ссылкой на карту
+        caption += f"[{rarity_normalized}-{card['number']}](https://waifucards.app/cards?number={card['id']})\n"
+
+        # [CHARACTER] ([TITLE]) с отдельными ссылками
+        caption += f"[{character}](https://waifucards.app/cards?character={character}) "
+        caption += f"([{title}](https://waifucards.app/cards?title={title}))\n"
+
+        # [SERIES SET] с ссылкой на сет
+        caption += f"[{series} {card_set}](https://waifucards.app/set/{card_set})\n"
+
+        caption += "\n"
+
+        # Цена
+        if price_data:
+            price = price_data.get("price")
+            count = price_data.get("count")
+            price_type = price_data.get("type", "median")
+
+            if price_type == "recommended":
+                caption += f"Рекомендованная стоимость: `{price}₽`\n"
+            else:
+                caption += f"Средняя цена {price}₽\n"
+                if count:
+                    caption += f"[На основании {count} лотов](https://waifucards.app/cards?number={card['id']}&list=sell)\n"
+
+        caption += "\n"
+
+        # Лимитная редкость если есть
+        if card.get("limit_range"):
+            caption += f"Лимит: `*/{card['limit_range']}`\n\n"
+
+        # Кнопка внизу
+        caption += f"[🔗 Открыть на сайте](https://waifucards.app/cards?number={card['id']})"
+
+        # путь с нормализованной редкостью: cards_png/set/RARITY-number.png
         img_path = os.path.join(
-            CARDS_IMG_DIR,
-            f"{card['set']}_{card['rarity']}_{card['number']}.png"
+            "../goddess-story/static/img/cards_png",
+            card['set'],
+            f"{rarity_normalized}-{card['number']}.png"
         )
+
+        # Fallback на WEBP если PNG не найден
+        if not os.path.exists(img_path):
+            img_path = os.path.join(
+                "../goddess-story/static/img/cards",
+                card['set'],
+                f"{rarity_normalized}-{card['number']}.webp"
+            )
 
         await safe_send_image(update.message, img_path, caption=caption)
 

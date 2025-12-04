@@ -217,7 +217,7 @@ def draw_boxes_with_numbers(np_img, boxes):
             width=8
         )
 
-    font = ImageFont.truetype("Montserrat-Bold.ttf", max(12, (x2-x1)//10))  # размер адаптивный
+    font = ImageFont.truetype("Montserrat-Bold.ttf", max(24, (x2-x1)//5))  # размер адаптивный
 
 
     for i, (x1, y1, x2, y2) in enumerate(boxes, start=1):

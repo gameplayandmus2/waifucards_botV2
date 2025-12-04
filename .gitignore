@@ -1,5 +1,6 @@
 .venv/
 data/cards/
+data/user_uploads/
 .env
 custom_yolo/dataset/
 __pycache__/

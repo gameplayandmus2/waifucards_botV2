@@ -5,6 +5,7 @@ import torch
 import faiss
 import numpy as np
 import requests
+from datetime import datetime
 from PIL import Image, ImageOps
 from io import BytesIO
 
@@ -104,7 +105,31 @@ async def safe_send_image(message_obj, img_path, caption=None, reply_markup=None
 
 # ------------------------ COMMANDS ------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Отправь фото с карточками ✨")
+    welcome_text = (
+        "👋 Привет! Я бот для распознавания карточек!\n\n"
+        "📸 Просто отправь мне фото с одной или несколькими карточками — я:\n"
+        "• Найду все карты на изображении\n"
+        "• Дам тебе выбрать нужную\n"
+        "• Покажу информацию о ней\n\n"
+        "⚠️ *Дисклеймер:* отправленные изображения могут использоваться для улучшения "
+        "работы модели распознавания (для обучения и повышения точности). "
+        "Отправляя фото, вы соглашаетесь с этим.\n\n"
+        "• Делайте фото под прямым углом (можно включить направляющие в камере)\n"
+        "• Избегайте бликов и засветов. Чем лучше читаемость тем выше шанс определения\n"
+        "• Вы можете прислать фото с несколькими карточками. Бот предложит выбрать нужную\n\n"
+        "👇 Вот пример того, какое фото можно мне отправить:"
+    )
+
+    await update.message.reply_text(welcome_text, parse_mode="Markdown")
+
+    # Отправка примера фото
+    example_path = "data/how_to.jpg"
+
+    try:
+        with open(example_path, "rb") as f:
+            await update.message.reply_photo(photo=f)
+    except FileNotFoundError:
+        await update.message.reply_text("⚠️ Ошибка: пример фото не найден в папке data/")
 
 # ------------------------ PHOTO HANDLER ------------------------
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -123,6 +148,22 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Ошибка чтения фото: {e}")
         return
 
+    # -----------------------------
+    # 📌 ЛОКАЛЬНОЕ СОХРАНЕНИЕ ФОТО
+    # -----------------------------
+    os.makedirs("data/user_uploads", exist_ok=True)
+
+    user_id = update.message.from_user.id
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    save_path = f"data/user_uploads/{timestamp}_user{user_id}.jpg"
+
+    try:
+        pil_img.save(save_path, "JPEG")
+    except Exception as e:
+        print(f"Ошибка сохранения изображения: {e}")
+    # -----------------------------
+
     # YOLO detect all cards
     np_img, boxes, filter_info = detect_all_cards_yolo(pil_img)
 
@@ -134,13 +175,12 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["np_img"] = np_img
     context.user_data["boxes"] = boxes
 
-    # Если осталось только одна карта - сразу её обрабатываем молча
+    # Если осталась только одна карта — сразу обрабатываем молча
     if len(boxes) == 1:
         await _process_card_by_index(update, context, 0)
         return
 
-    # Если карт больше одной - показываем превью для выбора
-    # draw numbered boxes
+    # Если карт больше одной — показываем превью
     preview = draw_boxes_with_numbers(np_img, boxes)
 
     out = BytesIO()
@@ -151,12 +191,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Проверяем качество распознавания
     if should_show_quality_warning(filter_info):
-        caption += "\n\n⚠️ Карточки на вашем изображении трудно распознать. Попробуйте обрезать фото оставив только нужную карточку."
+        caption += (
+            "\n\n⚠️ Карточки трудно распознать. "
+            "Попробуйте обрезать фото оставив только нужную карточку."
+        )
 
     await update.message.reply_photo(
         photo=InputFile(out, filename="preview.jpg"),
         caption=caption
     )
+
 
 # Вспомогательная функция для обработки карты по индексу
 async def _process_card_by_index(update: Update, context: ContextTypes.DEFAULT_TYPE, card_idx: int):
@@ -213,17 +257,17 @@ async def _process_card_by_index(update: Update, context: ContextTypes.DEFAULT_T
         card_set = card.get('set', 'Unknown')
 
         # Строим caption в Markdown формате
-        caption = f"Совпадение: `{match_percent}%`\n\n"
+        caption = f"📈 Совпадение: `{match_percent}%`\n\n"
 
         # [RARITY-NUMBER] без ссылки, в backticks
-        caption += f"*{rarity_normalized}-{card['number']}*\n"
+        caption += f"🃏 *{rarity_normalized}-{card['number']}*\n"
 
         # [CHARACTER] ([TITLE]) с отдельными ссылками
-        caption += f"[{character}](https://waifucards.app/cards?character={character}) "
+        caption += f"👤 [{character}](https://waifucards.app/cards?character={character}) "
         caption += f"([{title}](https://waifucards.app/cards?title={title}))\n"
 
         # [SERIES SET] оба жирные, ссылка только на сет
-        caption += f"*{series}* [{card_set}](https://waifucards.app/set/{card_set})\n"
+        caption += f"📚 *{series}* [{card_set}](https://waifucards.app/set/{card_set})\n"
 
         caption += "\n"
 
@@ -234,11 +278,11 @@ async def _process_card_by_index(update: Update, context: ContextTypes.DEFAULT_T
             price_type = price_data.get("type", "median")
 
             if price_type == "recommended":
-                caption += f"Рекомендованная стоимость: `{price}₽`\n"
+                caption += f"💰 Рекомендованная стоимость: `{price}₽`\n"
             else:
-                caption += f"Средняя цена {price}₽\n"
+                caption += f"💰 Средняя цена {price}₽\n"
                 if count:
-                    caption += f"На основании {count} лотов\n"
+                    caption += f"📊 На основании {count} лотов\n"
         else:
             caption += "Данных о стоимости карты нет.\n"
 
@@ -270,6 +314,8 @@ async def _process_card_by_index(update: Update, context: ContextTypes.DEFAULT_T
             )
 
         await safe_send_image(update.message, img_path, caption=caption, reply_markup=keyboard)
+
+    await update.message.reply_text (f"Пришлите следующий номер от 1 до {len(boxes)}, если вы хотите найти другую карту с вашего фото.")
 
     if not found:
         await update.message.reply_text(

@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+savePic = os.getenv("savePicture")
 
 DATA_DIR = "data"
 CARDS_JSON = os.path.join(DATA_DIR, "cards.json")
@@ -151,17 +152,18 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # -----------------------------
     # 📌 ЛОКАЛЬНОЕ СОХРАНЕНИЕ ФОТО
     # -----------------------------
-    os.makedirs("data/user_uploads", exist_ok=True)
+    if savePic == "TRUE":
+        os.makedirs("data/user_uploads", exist_ok=True)
 
-    user_id = update.message.from_user.id
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        user_id = update.message.from_user.id
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    save_path = f"data/user_uploads/{timestamp}_user{user_id}.jpg"
+        save_path = f"data/user_uploads/{timestamp}_user{user_id}.jpg"
 
-    try:
-        pil_img.save(save_path, "JPEG")
-    except Exception as e:
-        print(f"Ошибка сохранения изображения: {e}")
+        try:
+            pil_img.save(save_path, "JPEG")
+        except Exception as e:
+            print(f"Ошибка сохранения изображения: {e}")
     # -----------------------------
 
     # YOLO detect all cards

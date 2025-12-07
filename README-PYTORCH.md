@@ -2,30 +2,47 @@
 
 ## Быстрое переключение
 
-### Для GPU (clipCards.py - быстро):
+### Windows:
+
+**Для GPU (clipCards.py - быстро):**
 ```bash
 .\install-gpu.bat
 ```
 
-### Для CPU (bot.py на сервере):
+**Для CPU (bot.py на сервере):**
 ```bash
 .\install-cpu.bat
 ```
 
+### Linux/macOS:
+
+**Для GPU (clipCards.py - быстро):**
+```bash
+chmod +x install-gpu.sh
+./install-gpu.sh
+```
+
+**Для CPU (bot.py на сервере):**
+```bash
+chmod +x install-cpu.sh
+./install-cpu.sh
+```
+
 ## Что делают эти скрипты?
 
-1. **install-gpu.bat** - удаляет текущую версию PyTorch и ставит CUDA 12.4 версию
+1. **install-gpu.bat / install-gpu.sh** - удаляет текущую версию PyTorch и ставит CUDA 12.4 версию
    - PyTorch 2.6.0+cu124
    - Использует RTX 4070 Ti SUPER
    - **Используй перед запуском clipCards.py**
 
-2. **install-cpu.bat** - удаляет текущую версию PyTorch и ставит CPU версию
+2. **install-cpu.bat / install-cpu.sh** - удаляет текущую версию PyTorch и ставит CPU версию
    - PyTorch 2.9.1 (CPU only)
    - Работает везде
    - **Используй для развертывания на сервере**
 
 ## Пример использования
 
+**Windows:**
 ```bash
 # Хочу создать FAISS индекс с GPU
 .\install-gpu.bat
@@ -34,6 +51,14 @@ python clipCards.py
 # Готово, теперь переключаюсь обратно на CPU для bot.py
 .\install-cpu.bat
 python bot.py
+```
+
+**Linux (на сервере):**
+```bash
+# Устанавливаем CPU версию для bot.py
+chmod +x install-cpu.sh
+./install-cpu.sh
+python3 bot.py
 ```
 
 ## Проверка текущей версии

@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+BASE_IMG_DIR = os.getenv("BASE_IMG_DIR", "../goddess-story/static/img")
 savePic = os.getenv("savePicture")
 
 DATA_DIR = "data"
@@ -302,7 +303,8 @@ async def _process_card_by_index(update: Update, context: ContextTypes.DEFAULT_T
 
         # путь с нормализованной редкостью: cards_png/set/RARITY-number.png
         img_path = os.path.join(
-            "../goddess-story/static/img/cards_png",
+            BASE_IMG_DIR,
+            "cards_png",
             card['set'],
             f"{rarity_normalized}-{card['number']}.png"
         )
@@ -310,7 +312,8 @@ async def _process_card_by_index(update: Update, context: ContextTypes.DEFAULT_T
         # Fallback на WEBP если PNG не найден
         if not os.path.exists(img_path):
             img_path = os.path.join(
-                "../goddess-story/static/img/cards",
+                BASE_IMG_DIR,
+                "cards",
                 card['set'],
                 f"{rarity_normalized}-{card['number']}.webp"
             )

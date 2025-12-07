@@ -17,7 +17,7 @@ load_dotenv()
 # ------------------------
 # Пути
 # ------------------------
-BASE_IMG_DIR = "../goddess-story/static/img"
+BASE_IMG_DIR = os.getenv("BASE_IMG_DIR", "../goddess-story/static/img")
 FAISS_INDEX_FILE = "data/faiss.index"
 ID_MAP_FILE = "data/id_map.json"
 CARDS_DATA_FILE = "data/cards.json"
